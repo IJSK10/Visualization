@@ -5,6 +5,8 @@ import { SideBar } from "@/components/SideBar";
 import { Dropdown } from "@/components/Dropdown";
 import { Histogram } from "@/components/Histogram";
 import { BarPlot } from "@/components/Barplot";
+import ToggleSwitch from "@/components/ToggleSwitch";
+import { columnTypeMap } from "@/constants/column";
 
 
 const OnePage = () => {
@@ -13,21 +15,26 @@ const OnePage = () => {
     //const [columns,setColumns]= useState([]);
     const [column,setColumn]=useState<string>('');
     const [selectedGraph,setSelectedGraph]=useState<'histogram'|'barplot'>('histogram');
+    const [isToggled, setIsToggled] = useState<boolean>(false);
 
     useEffect(()=>{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        d3.csv('/data/video_games.csv').then((data: React.SetStateAction<any[]>)=>{
+        d3.csv('/data/games.csv').then((data: React.SetStateAction<any[]>)=>{
             setData(data);
         });
     },[]);
 
     const handleColumnChange = (value:string)=>{
         setColumn(value);
+        setSelectedGraph(columnTypeMap[value] ? "barplot" : "histogram");
+
     };
 
-    const handleGraphChange = (graph : 'histogram' | 'barplot') => {
-        setSelectedGraph(graph);
-    };
+
+    const handleToggleChange = (checked: boolean) => {
+        console.log(checked);
+        setIsToggled(checked);
+      };
 
     const columns=data[0] ? Object.keys(data[0]) : [];
 
@@ -44,16 +51,11 @@ const OnePage = () => {
 
                     {/* Buttons (Stacked Vertically) */}
                     <div className="flex flex-col space-y-2">
-                        <button className="p-2 bg-blue-500 text-white rounded" onClick={() => handleGraphChange('histogram')}>
-                            Histogram
-                        </button>
-                        <button className="p-2 bg-blue-500 text-white rounded" onClick={() => handleGraphChange('barplot')}>
-                            Barplot
-                        </button>
+                        <ToggleSwitch checked={isToggled} onChange={handleToggleChange} />
                     </div>
 
                     {/* Selected Graph Label */}
-                    <p className="text-lg font-semibold">{selectedGraph === 'histogram' ? <Histogram data={data} column={column}/> : <BarPlot data={data} column={column} />}</p>
+                    <p className="text-lg font-semibold">{selectedGraph === 'histogram' ? <Histogram data={data} column={column} checked={isToggled} /> : <BarPlot data={data} column={column} checked={isToggled}/>}</p>
                 </div>
             </div>
         </div>

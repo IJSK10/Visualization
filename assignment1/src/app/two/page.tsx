@@ -2,30 +2,33 @@
 import React,{useState,useEffect} from "react";
 import * as d3 from 'd3';
 import { SideBar } from "@/components/SideBar";
-import { Dropdown } from "@/components/Dropdown";
+//import { Dropdown } from "@/components/Dropdown";
+import RadioButton from "@/components/Radiobutton";
+import { ScatterPlot } from "@/components/Scatterplot";
 
 
 const TwoPage = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [data,setData] = useState<any[]>([]);
     //const [columns,setColumns]= useState([]);
-    const [column,setColumn]=useState<string>('');
-    const [selectedGraph,setSelectedGraph]=useState<'histogram'|'barplot'>('histogram');
+    const [column1,setColumn1]=useState<string>('');
+    const [column2,setColumn2]=useState<string>('');
+    //const [selectedGraph,setSelectedGraph]=useState<'histogram'|'barplot'>('histogram');
 
     useEffect(()=>{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        d3.csv('/data/video_games.csv').then((data: React.SetStateAction<any[]>)=>{
+        d3.csv('/data/games.csv').then((data: React.SetStateAction<any[]>)=>{
             setData(data);
         });
     },[]);
 
-    const handleColumnChange = (value:string)=>{
-        setColumn(value);
+    const handleColumn1Change = (value:string)=>{
+        setColumn1(value);
     };
 
-    const handleGraphChange = (graph : 'histogram' | 'barplot') => {
-        setSelectedGraph(graph);
-    };
+    const handleColumn2Change = (value:string)=>{
+        setColumn2(value);
+    }
 
     const columns=data[0] ? Object.keys(data[0]) : [];
 
@@ -37,21 +40,17 @@ const TwoPage = () => {
                 
                 {/* Horizontal Layout */}
                 <div className="flex items-center space-x-6">
-                    {/* Dropdown */}
-                    <Dropdown options={columns} selectedValue={column} onChange={handleColumnChange} />
-
-                    {/* Buttons (Stacked Vertically) */}
-                    <div className="flex flex-col space-y-2">
-                        <button className="p-2 bg-blue-500 text-white rounded" onClick={() => handleGraphChange('histogram')}>
-                            Histogram
-                        </button>
-                        <button className="p-2 bg-blue-500 text-white rounded" onClick={() => handleGraphChange('barplot')}>
-                            Barplot
-                        </button>
-                    </div>
+                <div className="p-6 bg-white shadow-md rounded-md">
+  <h2 className="text-lg font-semibold mb-4">Select an Option:</h2>
+  <div className="flex space-x-8">
+    <RadioButton columns={columns} selectedValue={column1} onChange={handleColumn1Change} />
+    <RadioButton columns={columns} selectedValue={column2} onChange={handleColumn2Change} />
+    <ScatterPlot data={data} xColumn={column1} yColumn={column2} />
+  </div>
+</div>
 
                     {/* Selected Graph Label */}
-                    <p className="text-lg font-semibold">{selectedGraph === 'histogram' ? 'Histogram' : 'BarPlot'}</p>
+                    {/* <p className="text-lg font-semibold">{selectedGraph === 'histogram' ? 'Histogram' : 'BarPlot'}</p> */}
                 </div>
             </div>
         </div>
