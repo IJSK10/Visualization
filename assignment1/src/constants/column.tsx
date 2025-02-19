@@ -22,8 +22,8 @@ export const columnTypeMap: { [key: string]: boolean } = {
 };
 
 export const columnxAxis: { [key: string]: string } = {
-    'Publisher' : "Game Publishers",
-    'Developer' : "Game developers",
+    'Publisher' : "Top 20 Game Publishers",
+    'Developer' : "Top 20 Game developers",
     'Metascore' : "Metascore of games",
     'Meta Status' : "Review given by metacritic",
     '# of Critic Reviews' : "No of Critic Reviews",
@@ -41,7 +41,7 @@ export const columnxAxis: { [key: string]: string } = {
     'Mixed %' : "Percentage of Mixed reviews",
     'Negative %' : "Percentage of Negative reviews",
     'Month' : "Month Released",
-    'NA_Sales' : "Sales in America",
-    'Global_Sales' : "Sales im All over the world",
+    'NA_Sales' : "Sales in America in millions",
+    'Global_Sales' : "Sales in All over the world in millions",
     'User_Count' : "Number of players"
 };
