@@ -11,6 +11,9 @@ export default function Home() {
   const [columns, setColumns] = useState([]);
   const [dimensionality, setDimensionality] = useState<number>(2);
   const [kValue,setKValue]=useState<number>(2);
+  const [component1,setComponent1]=useState<number>(1);
+  const [component2,setComponent2]=useState<number>(2);
+  const [changecomp1,setChangeComp1]=useState<boolean>(true);
 
   useEffect(() => {
     fetchKMeansData().then((res) => {
@@ -24,10 +27,20 @@ export default function Home() {
     setDimensionality(value);
   };
 
+  const handleChangeComponent1 = (value : number) => {
+    setComponent1(value);
+  }
+
+  const handleChangeComponent2 = (value : number) => {
+    setComponent2(value);
+  }
+
+  const handleChangeComp1 =() =>{
+    setChangeComp1(!changecomp1);
+  }
+
   const handleChangeKValue = (value : number) => {
     setKValue(value);
-    console.log("changed ka value");
-    console.log(kValue);
   }
 
   return (
