@@ -2,21 +2,24 @@
 import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { fetchPCAData } from "../utils/api";
+import ToggleSwitch from '../components/toggleswitch';
+import React from 'react';
 
-export default function ScreePlot({ dimensionality, setDimensionality }) {
+
+export default function ScreePlot({ dimensionality, setDimensionality, component1, component2, changeComp, changeComponent, compbool,}) {
   const svgRef = useRef();
   const [eigenvalues, setEigenvalues] = useState([]);
 
   useEffect(() => {
     fetchPCAData().then((res) => {
       setEigenvalues(res.eigenvalues);
-      drawScreePlot(res.eigenvalues);
+      drawScreePlot(res.eigenvalues, component1, component2, changeComponent);
     });
-  }, [dimensionality]);
+  }, [dimensionality, component1, component2, compbool]);
 
-  const drawScreePlot = (eigenvalues) => {
+  const drawScreePlot = (eigenvalues, component1, component2, changeComponent) => {
     const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove(); // Clear previous plot
+    svg.selectAll("*").remove();
 
     const width = 400,
       height = 300;
@@ -36,7 +39,20 @@ export default function ScreePlot({ dimensionality, setDimensionality }) {
 
     const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Bars
+    const tooltip = d3
+          .select("body")
+          .append("div")
+          .style("color", "#000")
+          .style("font-weight", "bold")
+          .style("position", "absolute")
+          .style("background", "#fff")
+          .style("border", "1px solid #ccc")
+          .style("padding", "5px 10px")
+          .style("border-radius", "5px")
+          .style("font-size", "12px")
+          .style("visibility", "hidden")
+          .style("pointer-events", "none");
+
     g.selectAll("rect")
       .data(eigenvalues)
       .enter()
@@ -46,22 +62,28 @@ export default function ScreePlot({ dimensionality, setDimensionality }) {
       .attr("width", xScale.bandwidth())
       .attr("height", d => innerHeight - yScale(d))
       .attr("fill", (_, i) => (i + 1 === dimensionality ? "orange" : "steelblue"))
+      .attr("stroke", (_, i) => (i === component1 || i === component2 ? "red" : "none"))
+      .attr("stroke-width", 2)
       .style("cursor", "pointer")
       .on("click", (j, i) => {
         for (let k=0;k<eigenvalues.length;k++)
         {
           if (eigenvalues[k]===i)
           {
-            console.log(eigenvalues[k]);
-            console.log(i);
-            setDimensionality(k+1);
+            setDimensionality(k + 1);
             break;
           }
         }
-        console.log(dimensionality);
-  });
+  }).on("contextmenu", (event, i) => {
+    event.preventDefault(); 
+    for (let k = 0; k < eigenvalues.length; k++) {
+      if (eigenvalues[k] === i) {
+        changeComponent(k);
+        break;
+      }
+    }
+  });;
 
-    // Line
     const line = d3
       .line()
       .x((_, i) => xScale(i + 1) + xScale.bandwidth() / 2)
@@ -75,7 +97,6 @@ export default function ScreePlot({ dimensionality, setDimensionality }) {
       .attr("stroke-width", 2)
       .attr("d", line);
 
-    // Circles
     g.selectAll(".dot")
       .data(eigenvalues)
       .enter()
@@ -83,17 +104,47 @@ export default function ScreePlot({ dimensionality, setDimensionality }) {
       .attr("cx", (_, i) => xScale(i + 1) + xScale.bandwidth() / 2)
       .attr("cy", (d) => yScale(d))
       .attr("r", 4)
-      .attr("fill", "red");
+      .attr("fill", "lightgreen")
+      .on("mouseover", (event, d) => {
+        tooltip
+          .style("visibility", "visible")
+          .text(`Value: ${d}`)
+          .style("left", `${event.pageX + 10}px`)
+          .style("top", `${event.pageY - 10}px`);
+      })
+      .on("mousemove", (event) => {
+        tooltip
+          .style("left", `${event.pageX + 10}px`)
+          .style("top", `${event.pageY - 10}px`);
+      })
+      .on("mouseout", () => {
+        tooltip.style("visibility", "hidden");
+      });
 
-    // Axes
     g.append("g").call(d3.axisLeft(yScale));
     g.append("g").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xScale));
+
+    svg.append("text")
+    .attr("x", width / 2)
+    .attr("y", height - 10) 
+    .attr("text-anchor", "middle")
+    .attr("font-size", "14px")
+    .attr("fill", "black")
+    .text("Principal Component Index");
+
+    svg.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("x", -height / 2)
+    .attr("y", 15) 
+    .attr("text-anchor", "middle")
+    .attr("font-size", "14px")
+    .attr("fill", "black")
+    .text("Eigenvalues");
   };
 
   return (
-    <div className="flex flex-col items-center">
-      {/* Slider Input */}
-      <div className="flex items-center gap-2 mt-4">
+    <div className="flex flex-col w-full">
+      <div className="flex items-center gap-2 mb-8 justify-center">
         <span className="font-bold">Dimensionality:</span>
         <input
           type="range"
@@ -105,7 +156,13 @@ export default function ScreePlot({ dimensionality, setDimensionality }) {
         />
         <span className="font-bold">{dimensionality}</span>
       </div>
-      <svg ref={svgRef} width={400} height={300}></svg>
+
+      <div className="flex justify-center">
+        <div className="flex flex-col justify-center items-center mr-4 h-60 gap-4">
+          <ToggleSwitch checked={compbool} onChange={changeComp} text="PCA1" />
+        </div>
+        <svg ref={svgRef} width={400} height={300}></svg>
+      </div>
     </div>
   );
 }

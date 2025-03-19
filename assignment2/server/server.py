@@ -16,20 +16,17 @@ df = pd.read_csv("games.csv")
 
 df = df[~df.eq('tbd').any(axis=1)]
 
-# Select only the specified columns
 selected_columns = [
     'Metascore', 'Userscore', 'Year', 'Rank', 
     'Positive %', 'Mixed %', 'Negative %',
     'NA_Sales', 'Global_Sales', 'User_Count'
 ]
 
-# Filter DataFrame to include only the selected columns
 numerical_df = df[selected_columns]
 
 scaler = StandardScaler()
 scaled_data = scaler.fit_transform(numerical_df)
 
-# Number of PCA components equals number of features
 n_components = len(selected_columns)
 pca = PCA(n_components=n_components)
 pca_transformed = pca.fit_transform(scaled_data)
@@ -67,7 +64,7 @@ def get_kmeans_info():
     comp1 = int(request.args.get("comp1", 0))
     comp2 = int(request.args.get("comp2", 1))
     
-    selected_components = pca_transformed[:, [comp1, comp2]]
+    selected_components = pca_transformed[:,]
     
     elbow_k, mse_scores = compute_elbow_method(selected_components)
     
@@ -84,22 +81,15 @@ def get_kmeans_info():
 def get_pca_info():
     response = {
         "eigenvalues": pca.explained_variance_.tolist(),
-        "eigenvectors": pca.components_.tolist(),
-        "explained_variance_ratio": pca.explained_variance_ratio_.tolist(),
-        "cumulative_explained_variance": np.cumsum(pca.explained_variance_ratio_).tolist(),
-        "feature_names": columns
     }
-
     return jsonify(response)
 
 @app.route("/api/biplot", methods=["GET"])
 def get_biplot_data():
-    # Get component indices to use (default to first two components)
     comp1 = int(request.args.get("comp1", 0))
     comp2 = int(request.args.get("comp2", 1))
     num_clusters = int(request.args.get("k", 3))
     
-    # Extract the selected components for clustering and visualization
     selected_components = pca_transformed[:, [comp1, comp2]]
     
     kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init=10)
@@ -129,50 +119,47 @@ def get_biplot_data():
     response = {
         "points": points_with_clusters,
         "feature_vectors": feature_vectors,
-        "num_clusters": num_clusters,
-        "selected_components": [comp1, comp2]
     }
     
     return jsonify(response)
 
 @app.route("/api/scatterplot", methods=["GET"])
 def get_scatterplot_data():
-    # Get component indices to use (default to first two components)
+
     comp1 = int(request.args.get("comp1", 0))
     comp2 = int(request.args.get("comp2", 1))
+    num_clusters = int(request.args.get("k", 3))
     
-    # Calculate squared sums based on all components
-    squared_sums = np.sum(pca.components_ ** 2, axis=0)
+    di = int(request.args.get("di", 2))
+    
+    di = min(di, n_components)
+
+    selected_components = pca_transformed[:, [comp1, comp2]]
+
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init=10)
+    cluster_labels = kmeans.fit_predict(selected_components).tolist()
+    
+    squared_sums = np.sum(pca.components_[:di] ** 2, axis=0)
     top_indices = np.argsort(squared_sums)[-4:][::-1]
     
     top_attributes = [numerical_df.columns[i] for i in top_indices]
     
-    # Extract data for the selected components
-    scatter_data = []
-    for i in range(len(pca_transformed)):
-        point = {
-            "x": float(pca_transformed[i, comp1]),
-            "y": float(pca_transformed[i, comp2]),
-            "attributes": scaled_data[i, top_indices].tolist()
-        }
-        scatter_data.append(point)
+    scatter_data = numerical_df.iloc[:, top_indices].values.tolist()
     
     response = {
         "top_attributes": top_attributes,
         "squared_sums": squared_sums[top_indices].tolist(),
         "scatter_data": scatter_data,
-        "selected_components": [comp1, comp2]
+        "cluster" : cluster_labels
     }
     
     return jsonify(response)
 
 @app.route("/api/mse_plot", methods=["GET"])
 def get_mse_plot_data():
-    # Get component indices to use (default to first two components)
     comp1 = int(request.args.get("comp1", 0))
     comp2 = int(request.args.get("comp2", 1))
     
-    # Extract the selected components
     selected_components = pca_transformed[:, [comp1, comp2]]
     
     mse_scores = []
@@ -186,7 +173,6 @@ def get_mse_plot_data():
     response = {
         "k_values": list(k_range),
         "mse_scores": mse_scores,
-        "selected_components": [comp1, comp2]
     }
     
     return jsonify(response)

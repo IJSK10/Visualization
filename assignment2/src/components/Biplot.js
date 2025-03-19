@@ -3,11 +3,11 @@ import { useEffect, useRef } from "react";
 import * as d3 from "d3";
 import { fetchBiplotData } from "../utils/api";
 
-export default function Biplot({ dimensionality, kValue }) {
+export default function Biplot({ dimensionality, kValue ,comp1,comp2}) {
   const svgRef = useRef();
 
   useEffect(() => {
-    fetchBiplotData(dimensionality, kValue)
+    fetchBiplotData(dimensionality, kValue,comp1,comp2)
       .then((res) => {
         console.log("API Response:", res);
 
@@ -16,14 +16,14 @@ export default function Biplot({ dimensionality, kValue }) {
           return;
         }
 
-        drawBiplot(res.points, res.feature_vectors);
+        drawBiplot(res.points, res.feature_vectors,comp1,comp2);
       })
       .catch((error) => {
         console.error("Error fetching biplot data:", error);
       });
-  }, [dimensionality, kValue]);
+  }, [dimensionality, kValue,comp1,comp2]);
 
-  const drawBiplot = (points, featureVectors) => {
+  const drawBiplot = (points, featureVectors,comp1,comp2) => {
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
 
@@ -38,10 +38,7 @@ export default function Biplot({ dimensionality, kValue }) {
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
 
-    // Extract clusters from points
-    const clusters = points.map((p) => p.cluster);
 
-    // Define scales
     const xScale = d3
       .scaleLinear()
       .domain(d3.extent(points, (d) => d.x))
@@ -54,10 +51,8 @@ export default function Biplot({ dimensionality, kValue }) {
 
     const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Define color scale for clusters
     const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
 
-    // Scatter Plot - Cluster Points
     g.selectAll("circle")
       .data(points)
       .enter()
@@ -68,32 +63,29 @@ export default function Biplot({ dimensionality, kValue }) {
       .attr("fill", (d) => colorScale(d.cluster))
       .attr("opacity", 0.8);
 
-    // Feature Arrows (Vectors)
     g.selectAll("line")
       .data(featureVectors)
       .enter()
       .append("line")
       .attr("x1", innerWidth / 2)
       .attr("y1", innerHeight / 2)
-      .attr("x2", (d) => innerWidth / 2 + d.dx * 350)
-      .attr("y2", (d) => innerHeight / 2 - d.dy * 350)
-      .attr("stroke", "red")
+      .attr("x2", (d) => innerWidth / 2 + d.dx * 200)
+      .attr("y2", (d) => innerHeight / 2 - d.dy * 200)
+      .attr("stroke", "black")
       .attr("stroke-width", 2)
       .attr("marker-end", "url(#arrow)");
 
-    // Feature Labels
     g.selectAll("text.feature-label")
       .data(featureVectors)
       .enter()
       .append("text")
-      .attr("x", (d) => innerWidth / 2 + d.dx * 380)
-      .attr("y", (d) => innerHeight / 2 - d.dy * 380)
-      .attr("fill", "red")
+      .attr("x", (d) => innerWidth / 2 + d.dx * 220)
+      .attr("y", (d) => innerHeight / 2 - d.dy * 220)
+      .attr("fill", "black")
       .attr("font-size", "12px")
       .attr("text-anchor", "middle")
       .text((d) => d.feature);
 
-    // Arrowheads for vectors
     svg
       .append("defs")
       .append("marker")
@@ -108,17 +100,15 @@ export default function Biplot({ dimensionality, kValue }) {
       .attr("d", "M 0 0 L 10 5 L 0 10 z")
       .attr("fill", "red");
 
-    // Axes
     g.append("g").call(d3.axisLeft(yScale));
     g.append("g").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xScale));
 
-    // Labels
     g.append("text")
       .attr("x", innerWidth / 2)
       .attr("y", innerHeight + 40)
       .attr("text-anchor", "middle")
       .attr("font-size", "14px")
-      .text("PC1");
+      .text(`PCA${comp1+1}`);
 
     g.append("text")
       .attr("x", -innerHeight / 2)
@@ -126,8 +116,29 @@ export default function Biplot({ dimensionality, kValue }) {
       .attr("text-anchor", "middle")
       .attr("font-size", "14px")
       .attr("transform", "rotate(-90)")
-      .text("PC2");
+      .text(`PCA${comp2+1}`);
+
+      const clusters = [...new Set(points.map((d) => d.cluster))];
+
+      const legend = svg.append("g").attr("transform", `translate(${width - 100}, 50)`);
+
+      clusters.forEach((cluster, i) => {
+        legend
+          .append("circle")
+          .attr("cx", 0)
+          .attr("cy", i * 20)
+          .attr("r", 5)
+          .attr("fill", colorScale(cluster));
+  
+        legend
+          .append("text")
+          .attr("x", 10)
+          .attr("y", i * 20 + 4)
+          .attr("font-size", "12px")
+          .attr("fill", "black")
+          .text(`Cluster ${cluster}`);
+      });
   };
 
-  return <svg ref={svgRef} width={600} height={400}></svg>;
+  return <svg ref={svgRef} width={600} height={500}></svg>;
 }
