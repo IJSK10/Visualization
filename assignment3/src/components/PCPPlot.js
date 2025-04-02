@@ -1,144 +1,184 @@
-"use client";
-import React, { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 
-const CombinedPCPPlot = () => {
+const PCPPlot = ({ order, mdsOrder, setOrder, k}) => {
+  const svgRef = useRef(null);
   const [data, setData] = useState([]);
-  const [numericalColumns, setNumericalColumns] = useState([]);
-  const [categoricalColumns, setCategoricalColumns] = useState({});
-  const [clusters, setClusters] = useState([]);
 
   useEffect(() => {
     fetch("http://127.0.0.1:5001/pcp_data")
       .then((response) => response.json())
-      .then((json) => {
-        setData(json.data);
-        setNumericalColumns(json.numerical_columns);
-        setCategoricalColumns(json.categorical_columns);
-        
-        const uniqueClusters = [...new Set(json.data.map((d) => d.Cluster_ID))];
-        setClusters(uniqueClusters);
-      })
-      .catch((error) => console.error("Error fetching PCP data:", error));
-  }, []);
+      .then((json) => setData(json.data))
+      .catch((error) => console.error("Error fetching data:", error));
+  }, [k]);
 
   useEffect(() => {
-    if (data.length === 0 || (numericalColumns.length === 0 && Object.keys(categoricalColumns).length === 0)) return;
-    
-    d3.select("#combined-pcp-svg").selectAll("*").remove();
-    
-    const margin = { top: 50, right: 70, bottom: 50, left: 70 };
-    const width = 1600 - margin.left - margin.right;
-    const height = 700 - margin.top - margin.bottom;
-    
-    const svg = d3
-      .select("#combined-pcp-svg")
-      .attr("width", width + margin.left + margin.right)
-      .attr("height", height + margin.top + margin.bottom)
+    if (data.length === 0 || !order) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll("*").remove();
+
+    const margin = { top: 80, right: 30, bottom: 80, left: 10 },
+      width = 1450 - margin.left - margin.right,
+      height = 600 - margin.top - margin.bottom;
+
+    const dimensions = [...mdsOrder,...order];
+
+    const x = d3.scalePoint().domain(dimensions).range([0, width]).padding(1.5);
+    const y = {};
+
+    dimensions.forEach((dim) => {
+      if (typeof data[0][dim] === "number") {
+        y[dim] = d3
+          .scaleLinear()
+          .domain(d3.extent(data, (d) => +d[dim]))
+          .range([height, 0]);
+      } else {
+        y[dim] = d3
+          .scalePoint()
+          .domain([...new Set(data.map((d) => d[dim]))])
+          .range([height, 0]);
+      }
+    });
+
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+    const line = d3.line().x((d) => x(d.dimension)).y((d) => y[d.dimension](d.value));
+
+    const g = svg
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    const allColumns = [...numericalColumns, ...Object.keys(categoricalColumns).slice(0, 7)];
-    
-    const xScale = d3.scalePoint()
-      .domain(allColumns)
-      .range([0, width]);
-    
-    const yScales = {};
-    
-    numericalColumns.forEach((col) => {
-      yScales[col] = d3.scaleLinear()
-        .domain(d3.extent(data, (row) => +row[col] || 0))
-        .range([height, 0]);
-    });
-    
-    Object.keys(categoricalColumns).slice(0, 7).forEach((col) => {
-      yScales[col] = d3.scalePoint()
-        .domain(categoricalColumns[col] || [])
-        .range([height, 0])
-        .padding(0.5);
-    });
-    
-    const colorScale = d3.scaleOrdinal(d3.schemeCategory10).domain(clusters);
-    
-    const processedData = data.map(d => {
-      const item = { ...d };
-      Object.keys(categoricalColumns).slice(0, 7).forEach(col => {
-        if (!item[col] || yScales[col](item[col]) === undefined) {
-          const domainValues = yScales[col].domain();
-          if (domainValues.length > 0) item[col] = domainValues[0];
-        }
-      });
-      return item;
-    });
-    
-    svg.selectAll(".line")
-      .data(processedData)
+    svg
+    .append("text")
+    .attr("x", width / 2)
+    .attr("y", 30)
+    .attr("text-anchor", "middle")
+    .style("font-size", "24px")
+    .style("font-weight", "bold")
+    .text("PCP Plot");
+
+    g.selectAll(".line")
+      .data(data)
       .enter()
       .append("path")
-      .attr("d", d => {
-        return d3.line()
-          .x(dim => xScale(dim))
-          .y(dim => yScales[dim](d[dim]))
-          (allColumns);
+      .attr("d", (d) =>
+        line(
+          dimensions.map((dim) => ({ dimension: dim, value: d[dim] }))
+        )
+      )
+      .style("fill", "none")
+      .style("stroke", (d) => color(d.Cluster_ID))
+      .style("opacity", 0.7);
+
+    const axisGroups = g.selectAll(".axis")
+      .data(dimensions)
+      .enter()
+      .append("g")
+      .attr("transform", (d) => `translate(${x(d)},0)`)
+      .each(function (d) {
+        const axisGroup = d3.select(this);
+
+        axisGroup.call(d3.axisLeft(y[d]).tickSize(6).tickPadding(10));
+
+        axisGroup.selectAll(".tick text")
+          .style("font-weight", "bold") 
+          .each(function () {
+            const text = d3.select(this);
+            const words = text.text();
+            text.text(""); 
+
+            for (let i = 0; i < words.length; i += 14) {
+              text.append("tspan")
+                .attr("x", 0)
+                .attr("dy", i === 0 ? "0em" : "1.2em")
+                .text(words.slice(i, i + 14));
+            }
+          });
+      });
+
+    g.selectAll(".axis line, .axis path")
+      .style("stroke", "black");
+
+    const axisLabels = g.selectAll(".axis-label")
+      .data(dimensions)
+      .enter()
+      .append("text")
+      .attr("x", (d) => x(d))
+      .attr("y", height + 50)
+      .attr("text-anchor", "middle")
+      .style("fill", "black")
+      .style("font-size", "14px")
+      .style("cursor", "pointer")  // Make labels draggable
+      .each(function(d) {
+        if (d.length > 10) {
+          const mid = Math.ceil(d.length / 2);
+          const firstPart = d.slice(0, mid);
+          const secondPart = d.slice(mid);
+          d3.select(this).append("tspan").attr("x", x(d)).attr("dy", "0em").text(firstPart);
+          d3.select(this).append("tspan").attr("x", x(d)).attr("dy", "1.2em").text(secondPart);
+        } else {
+          d3.select(this).text(d);
+        }
+      });
+
+    axisLabels.call(d3.drag()
+      .on("start", function(event, d) {
+        d3.select(this).raise();
       })
-      .attr("fill", "none")
-      .attr("stroke", d => colorScale(d.Cluster_ID))
-      .attr("stroke-width", 1.5)
-      .attr("opacity", 0.7);
-    
-    allColumns.forEach(col => {
-      svg.append("line")
-        .attr("x1", xScale(col))
-        .attr("x2", xScale(col))
-        .attr("y1", 0)
-        .attr("y2", height)
-        .attr("stroke", "black")
-        .attr("stroke-width", 1);
-    });
-    
-    allColumns.forEach(col => {
-      const axis = d3.axisLeft(yScales[col]).tickSize(0);
-      const axisGroup = svg.append("g")
-        .attr("transform", `translate(${xScale(col)},0)`)
-        .call(axis);
-      axisGroup.select(".domain").remove();
-      axisGroup.append("text")
-        .attr("y", -15)
-        .attr("x", 0)
-        .attr("text-anchor", "middle")
-        .attr("fill", "black")
-        .text(col);
-      axisGroup.selectAll("text")
-        .attr("fill", "white")
-        .attr("font-size", "10px");
-    });
-    
+      .on("drag", function(event, d) {
+        const draggedIndex = dimensions.indexOf(d);
+        const dropIndex = Math.floor(event.x / (width / dimensions.length));
+
+        if (draggedIndex !== dropIndex) {
+          const updatedOrder = [...dimensions];
+          updatedOrder.splice(draggedIndex, 1);
+          updatedOrder.splice(dropIndex, 0, d);
+
+          setOrder(updatedOrder);
+
+          d3.select(this).attr("transform", `translate(${x(d)},0)`);
+        }
+      })
+      .on("end", function(event, d) {
+        const draggedIndex = dimensions.indexOf(d);
+        const dropIndex = Math.floor(event.x / (width / dimensions.length));
+
+        if (draggedIndex !== dropIndex) {
+          const updatedOrder = [...dimensions];
+          updatedOrder.splice(draggedIndex, 1); 
+          updatedOrder.splice(dropIndex, 0, d);
+
+          setOrder(updatedOrder);
+        }
+      })
+    );
     const legend = svg.append("g")
-      .attr("class", "legend")
-      .attr("transform", `translate(${width - 100}, ${-30})`);
-    
-    clusters.forEach((cluster, i) => {
-      const legendRow = legend.append("g")
-        .attr("transform", `translate(0, ${i * 20})`);
-      legendRow.append("rect")
-        .attr("width", 10)
-        .attr("height", 10)
-        .attr("fill", colorScale(cluster));
-      legendRow.append("text")
-        .attr("x", 15)
-        .attr("y", 10)
-        .attr("fill", "white")
-        .text(`Cluster ${cluster}`);
+      .attr("transform", `translate(${width - 70}, 10)`);
+
+    const uniqueClusters = [...new Set(data.map(d => d.Cluster_ID))];
+
+    uniqueClusters.forEach((cluster, i) => {
+      legend.append("circle")
+        .attr("cx", 0)
+        .attr("cy", i * 20)
+        .attr("r", 5)
+        .attr("fill", color(cluster));
+
+      legend.append("text")
+        .attr("x", 10)
+        .attr("y", i * 20 + 4)
+        .text("cluster "+cluster)
+        .style("font-size", "12px")
+        .attr("alignment-baseline", "middle");
     });
-  }, [data, numericalColumns, categoricalColumns, clusters]);
+  }, [data, order, mdsOrder, setOrder]);
 
   return (
-    <div>
-      <h3>Combined Parallel Coordinates Plot</h3>
-      <svg id="combined-pcp-svg"></svg>
+    <div style={{ textAlign: "center" }}>
+      <svg ref={svgRef} width={1500} height={600}></svg>
     </div>
   );
 };
 
-export default CombinedPCPPlot;
+export default PCPPlot;

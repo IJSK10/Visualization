@@ -1,221 +1,147 @@
+from flask import Flask, jsonify, request
 import pandas as pd
 from flask_cors import CORS
 import numpy as np
-from sklearn.manifold import MDS
-from flask import Flask, jsonify
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
-import json
+from sklearn.manifold import MDS
+from kneed import KneeLocator
 
 app = Flask(__name__)
 CORS(app)
 
-# Load and preprocess data
-def load_data():
-    # Read CSV file
-    df = pd.read_csv('games.csv')
+file_path = "games.csv"
+df = pd.read_csv(file_path)
+
+df = df[~df.eq('tbd').any(axis=1)]
+df = df.dropna()
+
+
+numerical_columns = [
+    'Metascore', 'Userscore', 'Year', 'Rank', 
+    'Positive %', 'Mixed %', 'Negative %',
+    'NA_Sales', 'Global_Sales', 'User_Count'
+]
+categorical_columns = df.select_dtypes(exclude=[np.number]).columns.tolist()
+
+
+df1 = df.copy()
+categorical_mappings1 = {}
+for col in categorical_columns:
+    df1[col] = df1[col].astype(str)
+    top_15_categories = df1[col].value_counts().nlargest(23).index.tolist()
+    df1 = df1[df1[col].isin(top_15_categories)]
+    categorical_mappings1[col] = top_15_categories
+
+
+scaler = StandardScaler()
+scaled_data = scaler.fit_transform(df1[numerical_columns])
+
+
+def find_optimal_k(data, max_k=10):
+    mse_scores = []
+    k_range = list(range(1, 11))
     
-    # Remove rows with 'tbd' values
-    df = df[~df.eq('tbd').any(axis=1)]
+    for k in k_range:
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+        kmeans.fit(data)
+        mse_scores.append(kmeans.inertia_)
     
-    # Select desired columns
-    selected_columns = [
-        'Metascore', 'Userscore', 'Year', 'Rank', 
-        'Positive %', 'Mixed %', 'Negative %',
-        'NA_Sales', 'Global_Sales', 'User_Count'
+    kneedle = KneeLocator(
+        k_range, 
+        mse_scores, 
+        curve="convex", 
+        direction="decreasing",
+        S=1.0 
+    )
+    
+    optimal_k = kneedle.elbow
+    
+    if optimal_k is None:
+        diffs = np.diff(mse_scores, 2)
+        elbow_index = np.argmax(diffs) + 1
+        optimal_k = k_range[elbow_index]
+    
+    return optimal_k
+
+
+optimal_k = find_optimal_k(scaled_data)
+kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+df1['Cluster_ID'] = kmeans.fit_predict(scaled_data)
+
+
+pca = PCA(n_components=len(numerical_columns))
+pca_transformed = pca.fit_transform(scaled_data)
+
+
+mds = MDS(n_components=2, dissimilarity='euclidean', random_state=42)
+mds_data_points = mds.fit_transform(scaled_data)
+
+def format_mds_data():
+    return [
+        {"x": float(mds_data_points[i, 0]), "y": float(mds_data_points[i, 1]), "cluster": int(df1['Cluster_ID'].iloc[i])}
+        for i in range(len(df1))
     ]
-    
-    # Filter columns that exist in the dataframe
-    selected_columns = [col for col in selected_columns if col in df.columns]
-    
-    # Convert to numeric where possible
-    for col in selected_columns:
-        try:
-            df[col] = pd.to_numeric(df[col])
-        except:
-            print(f"Couldn't convert {col} to numeric. Keeping as is.")
-    
-    # Choose only rows with complete data for the selected columns
-    df_numeric = df[selected_columns].dropna()
-    
-    # Perform PCA and K-means clustering
-    X = df_numeric[selected_columns].values
-    X_scaled = StandardScaler().fit_transform(X)
-    
-    # Apply PCA using all selected columns as components
-    n_components = len(selected_columns)
-    pca = PCA(n_components=n_components)
-    pca_result_full = pca.fit_transform(X_scaled)
-    
-    # Take just the top 2 components for clustering
-    pca_result = pca_result_full[:, :2]
-    
-    # Apply K-means clustering with k=4
-    kmeans = KMeans(n_clusters=4, random_state=42)
-    cluster_labels = kmeans.fit_predict(pca_result)
-    
-    # Add cluster_id to the dataframe
-    df_numeric['cluster_id'] = cluster_labels
-    
-    # Add PCA components as columns
-    df_numeric['pca_1'] = pca_result[:, 0]
-    df_numeric['pca_2'] = pca_result[:, 1]
-    
-    # Add cluster_id to original dataframe
-    df = df.loc[df_numeric.index].copy()
-    df['cluster_id'] = cluster_labels
-    df['pca_1'] = pca_result[:, 0]
-    df['pca_2'] = pca_result[:, 1]
-    
-    # Add explained variance information
-    explained_variance = pca.explained_variance_ratio_
-    # print(f"Explained variance by components: {explained_variance}")
-    # print(f"Cumulative explained variance: {np.cumsum(explained_variance)}")
-    print("hello")
-    return df, df_numeric, selected_columns
 
-# Task 4(a): Data MDS plot with Euclidean distance
-@app.route('/api/mds-data', methods=['GET'])
-def mds_data():
-    _, df_numeric, selected_columns = load_data()
-    
-    # Extract features and standardize
-    print("1")
-    X = df_numeric[selected_columns].values
-    X_scaled = StandardScaler().fit_transform(X)
-    print("2")
-    # Apply MDS
-    mds = MDS(n_components=2, metric=True, random_state=42)
-    print("5")
-    mds_data = mds.fit_transform(X_scaled)
-    print("3")
-    # Prepare results
-    result = {
-        'x': mds_data[:, 0].tolist(),
-        'y': mds_data[:, 1].tolist(),
-        'cluster_id': df_numeric['cluster_id'].tolist(),
-        'stress': mds.stress_
-    }
-    #print(result)
-    return jsonify(result)
 
-# Task 4(b): Variables MDS plot with (1-|correlation|) distance
-@app.route('/api/mds-variables', methods=['GET'])
-def mds_variables():
-    df,df_numeric, selected_columns = load_data()
+corr_matrix = df1[numerical_columns].corr()
+dist_matrix = 1 - np.abs(corr_matrix)
+mds_vars = MDS(n_components=2, dissimilarity="precomputed", random_state=42)
+mds_variables = mds_vars.fit_transform(dist_matrix)
+
+def format_mds_variables():
+    return [
+        {"x": float(mds_variables[i, 0]), "y": float(mds_variables[i, 1]), "variable": numerical_columns[i]}
+        for i in range(len(numerical_columns))
+    ]
+
+@app.route('/mds_data', methods=['GET'])
+def get_mds_data():
+    return jsonify(format_mds_data())
+
+@app.route('/mds_variables', methods=['GET'])
+def get_mds_variables():
+    return jsonify(format_mds_variables())
+
+@app.route('/pcp_data', methods=['GET'])
+def get_pcp_data():
+    return jsonify({"data":df1.to_dict(orient="records")})
+
+@app.route("/mse_plot", methods=["GET"])
+def get_mse_plot_data():
+    selected_components = pca_transformed[:, [0, 1]]  
     
-    # Compute correlation matrix
-    print("1")
-    corr_matrix = df_numeric[selected_columns].corr().abs()
+    mse_scores = []
+    k_range = range(1, 11)
     
-    print("2")
-    # Convert to distance matrix (1 - |correlation|)
-    dist_matrix = 1 - corr_matrix
-    print("3")
-    # Apply MDS to the distance matrix
-    mds = MDS(n_components=2, metric=True, dissimilarity='precomputed', random_state=42)
-    mds_result = mds.fit_transform(dist_matrix)
-    print("4")
-    # Prepare results
-    result = {
-        'variables': selected_columns,
-        'x': mds_result[:, 0].tolist(),
-        'y': mds_result[:, 1].tolist(),
-        'stress': mds.stress_
+    for i in k_range:
+        kmeans = KMeans(n_clusters=i, random_state=42, n_init=10)
+        kmeans.fit(selected_components)
+        mse_scores.append(kmeans.inertia_)
+    
+    response = {
+        "k_values": list(k_range),
+        "mse_scores": mse_scores,
+        "optimal_k":int(optimal_k)
     }
     
-    return jsonify(result)
+    return jsonify(response)
 
-# Task 5: Parallel Coordinates Plot data
-@app.route('/api/pcp-data', methods=['GET'])
-def pcp_data():
-    df, df_numeric, selected_columns = load_data()
+@app.route("/set_k", methods=["POST"])
+def set_k():
+    global optimal_k, df1
+    data = request.get_json()
+    new_k = data.get("k")
     
-    # Get all columns (numeric and categorical)
-    all_columns = [col for col in df.columns if col != 'cluster_id' and col not in ['pca_1', 'pca_2']]
+    if not isinstance(new_k, int) or new_k < 1:
+        return jsonify({"error": "Invalid k value"}), 400
     
-    # For each row, create a list of values
-    pcp_data = []
-    for _, row in df.iterrows():
-        if not row.isna().any():
-            data_point = {
-                'cluster_id': row.get('cluster_id', 0),
-                'values': {col: row[col] for col in all_columns if col in row}
-            }
-            pcp_data.append(data_point)
+    optimal_k = new_k
+    kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+    df1['Cluster_ID'] = kmeans.fit_predict(scaled_data)
     
-    # Get column types for frontend rendering
-    column_types = {}
-    for col in all_columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            column_types[col] = 'numeric'
-            # Include min and max for scaling
-            column_types[col + '_min'] = df[col].min()
-            column_types[col + '_max'] = df[col].max()
-        else:
-            column_types[col] = 'categorical'
-            # Include unique values for categorical axes
-            column_types[col + '_values'] = df[col].unique().tolist()
-    
-    result = {
-        'data': pcp_data[:500],  # Limit to 500 points to avoid overloading the browser
-        'columns': all_columns,
-        'column_types': column_types
-    }
-    
-    return jsonify(result)
-
-# Task 6: Get correlation data for PCP axis ordering
-@app.route('/api/correlations', methods=['GET'])
-def correlations():
-    _, df_numeric, selected_columns = load_data()
-    
-    # Compute correlation matrix
-    corr_matrix = df_numeric[selected_columns].corr().round(3)
-    
-    # Convert to dictionary format
-    corr_dict = {}
-    for col in selected_columns:
-        corr_dict[col] = corr_matrix[col].to_dict()
-    
-    return jsonify(corr_dict)
-
-# Endpoint to get ordered columns based on user selection
-@app.route('/api/order-columns/<ordering>', methods=['GET'])
-def order_columns(ordering):
-    try:
-        # Parse the ordering (comma-separated column names)
-        ordered_columns = ordering.split(',')
-        
-        # Load data to get all columns
-        _, _, selected_columns = load_data()
-        
-        # Check if ordered columns are valid
-        for col in ordered_columns:
-            if col not in selected_columns:
-                return jsonify({'error': f'Column {col} not found in dataset'}), 400
-        
-        # Add any remaining columns not in the ordering
-        remaining_columns = [col for col in selected_columns if col not in ordered_columns]
-        final_ordering = ordered_columns + remaining_columns
-        
-        return jsonify({'ordering': final_ordering})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-# New endpoint to get PCA results
-@app.route('/api/pca-data', methods=['GET'])
-def pca_data():
-    df, _, _ = load_data()
-    
-    result = {
-        'x': df['pca_1'].tolist(),
-        'y': df['pca_2'].tolist(),
-        'cluster_id': df['cluster_id'].tolist()
-    }
-    
-    return jsonify(result)
+    return jsonify({"message": "Updated k value", "new_k": optimal_k})
 
 if __name__ == "__main__":
     app.run(debug=True, host="127.0.0.1", port=5001)
